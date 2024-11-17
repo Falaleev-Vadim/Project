@@ -1,144 +1,82 @@
-import pygame
 import numpy as np
-import math
-import time
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+import tkinter as tk
+from tkinter import messagebox
 
-# Инициализация Pygame
-pygame.init()
-
-# Параметры окна
-WIDTH, HEIGHT = 800, 600
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Симуляция полета снарядов")
-
-# Цвета
-WHITE = (255, 255, 255)
-RED = (255, 0, 0)
-BLACK = (0, 0, 0)
-GREEN = (0, 255, 0)
-BLUE = (0, 0, 255)
-
-# Константы
-g = 9.81  # Ускорение свободного падения (м/с²)
-
-# Параметры полигона
-polygon_width = 500  # Ширина полигона в метрах
-polygon_length = 5000  # Длина полигона в метрах
-scale = 0.1  # Масштабирование (10 пикселей = 1 метр)
-
-# Точка старта снаряда
-start_x, start_y = -100, 300  # Начальная позиция снаряда за пределами полигона
-
-# Список для записи координат падения снарядов
-impact_points = []
-
-# Параметры полета снаряда (изначальные)
-v0 = 100  # Начальная скорость (м/с)
-angle = 45  # Угол (градусы)
-
-# Функция расчета траектории снаряда
-def calculate_trajectory(v0, angle, dt=0.1):
-    # Начальные условия
-    angle_rad = math.radians(angle)
-    vx = v0 * math.cos(angle_rad)
-    vy = v0 * math.sin(angle_rad)
+def calculate_trajectory(v0, angle, g=9.81, time_step=0.01):
+    angle_rad = np.radians(angle)
     
-    # Списки для координат
-    x_positions = [start_x]
-    y_positions = [start_y]
-
-    # Время полета
-    t = 0
-    while True:
-        # Расчет новых координат
-        t += dt
-        x = start_x + vx * t
-        y = start_y + vy * t - 0.5 * g * t**2
-        
-        # Добавляем новые координаты
-        x_positions.append(x)
-        y_positions.append(y)
-
-        # Если снаряд упал на землю (y < 0), выходим из цикла
-        if y <= 0:
-            break
-
-    return x_positions, y_positions
-
-# Функция для отображения интерфейса
-def display_info(v0, angle, impact_point):
-    font = pygame.font.Font(None, 36)
-    info_text = f"Скорость: {v0} м/с, Угол: {angle}°"
-    text = font.render(info_text, True, BLACK)
-    screen.blit(text, (10, 10))
+    v0x = v0 * np.cos(angle_rad)
+    v0y = v0 * np.sin(angle_rad)
     
-    # Запись координат падения снаряда
-    if impact_point:
-        x, y = impact_point
-        impact_text = f"Место падения: ({x:.2f}, {y:.2f})"
-        impact = font.render(impact_text, True, BLACK)
-        screen.blit(impact, (10, 50))
+    t_max = 2 * v0y / g
+    time_points = np.arange(0, t_max, time_step)
+    
+    x = v0x * time_points
+    y = v0y * time_points - 0.5 * g * time_points**2
+    
+    return x[y >= 0], y[y >= 0]
 
-# Функция для рисования кнопки
-def draw_button(text, x, y, width, height):
-    font = pygame.font.Font(None, 36)
-    pygame.draw.rect(screen, BLUE, (x, y, width, height))
-    text_surface = font.render(text, True, WHITE)
-    screen.blit(text_surface, (x + 10, y + 10))
+def update(frame, x, y, line, time_text, coords_text):
+    if frame < len(x):
+        line.set_data(x[:frame], y[:frame])
+        time_text.set_text(f"Time: {frame * 0.01:.2f} s")
+        coords_text.set_text(f"Coords: ({x[frame]:.2f}, {y[frame]:.2f})")
+    return line, time_text, coords_text
 
-# Главный цикл программы
-running = True
-clock = pygame.time.Clock()
+def start_animation():
+    global line, time_text, coords_text, x, y, anim
 
-# Стартовая траектория (еще не запущен полет)
-x_positions, y_positions = [], []
+    try:
+        speed = float(speed_entry.get())
+        angle = float(angle_entry.get())
+    except ValueError:
+        messagebox.showerror("Ошибка", "Введите корректные значения скорости и угла.")
+        return
 
-# Местоположение кнопки для старта
-button_x, button_y = 600, 50
-button_width, button_height = 150, 50
-flight_started = False
+    x, y = calculate_trajectory(speed, angle)
 
-while running:
-    screen.fill(WHITE)
+    fig, ax = plt.subplots()
+    ax.set_xlim(0, 65000)
+    ax.set_ylim(0, max(y) + 10)
+    ax.set_title("Траектория полета снаряда")
+    ax.set_xlabel("X (м)")
+    ax.set_ylabel("Y (м)")
+    
+    line, = ax.plot([], [], lw=2)
+    time_text = ax.text(0.7, 0.9, "", transform=ax.transAxes)
+    coords_text = ax.text(0.7, 0.85, "", transform=ax.transAxes)
 
-    # Отображение полигона
-    pygame.draw.rect(screen, GREEN, (0, HEIGHT-100, polygon_length * scale, 100))  # Поле
-    pygame.draw.rect(screen, GREEN, (0, 0, polygon_width * scale, HEIGHT))  # Поле
+    anim = FuncAnimation(fig, update, frames=len(x), fargs=(x, y, line, time_text, coords_text), interval=10, blit=True)
+    plt.show()
 
-    # Отображение кнопки "Запустить полет"
-    draw_button("Запустить полет", button_x, button_y, button_width, button_height)
+    saved_coords.append((x[-1], y[-1]))
 
-    # Отображение информации о снаряде
-    display_info(v0, angle, impact_points[-1] if impact_points else None)
+def show_coordinates():
+    coords_str = "\n".join([f"X: {coord[0]:.2f}, Y: {coord[1]:.2f}" for coord in saved_coords])
+    if coords_str:
+        messagebox.showinfo("Координаты падения", coords_str)
+    else:
+        messagebox.showinfo("Координаты падения", "Нет записанных координат.")
 
-    # Проверка нажатия кнопки
-    mouse_x, mouse_y = pygame.mouse.get_pos()
-    mouse_click = pygame.mouse.get_pressed()[0]
-    if (button_x <= mouse_x <= button_x + button_width and
-        button_y <= mouse_y <= button_y + button_height and
-        mouse_click):
-        if not flight_started:  # Только если полет не запущен
-            flight_started = True
-            x_positions, y_positions = calculate_trajectory(v0, angle)  # Пересчитываем траекторию
+saved_coords = []
 
-    # Анимация полета снаряда
-    if flight_started:
-        for i in range(1, len(x_positions)):
-            # Рисуем снаряд по координатам
-            pygame.draw.circle(screen, RED, (int(x_positions[i]), HEIGHT - int(y_positions[i])), 5)
-            pygame.display.flip()
-            time.sleep(0.05)  # Пауза для анимации
+root = tk.Tk()
+root.title("Симуляция полета снаряда")
 
-        # Записываем место падения
-        impact_points.append((x_positions[-1], y_positions[-1]))
-        flight_started = False  # Сбрасываем состояние после завершения полета
+tk.Label(root, text="Начальная скорость (м/с):").pack()
+speed_entry = tk.Entry(root)
+speed_entry.pack()
 
-    # Обработка событий
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
+tk.Label(root, text="Угол выстрела (градусы):").pack()
+angle_entry = tk.Entry(root)
+angle_entry.pack()
 
-    pygame.display.flip()
-    clock.tick(60)  # 60 FPS
+start_button = tk.Button(root, text="Запустить анимацию", command=start_animation)
+start_button.pack()
 
-pygame.quit()
+show_button = tk.Button(root, text="Показать координаты", command=show_coordinates)
+show_button.pack()
+
+root.mainloop()
